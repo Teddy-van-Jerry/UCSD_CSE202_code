@@ -1,0 +1,3 @@
+#!/bin/bash
+clang-format -i $(find . -path ./build -prune -o \( -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print)
+echo "Done formatting"
