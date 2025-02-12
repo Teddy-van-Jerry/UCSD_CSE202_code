@@ -51,8 +51,6 @@ class QuestSolver {
 
   private:
     Quests<T_XP, T_Gold> quests;
-    T_XP current_xp     = 0;
-    T_Gold current_gold = 0;
 
   public:
     QuestSolver() = default;
@@ -64,6 +62,8 @@ class QuestSolver {
 
     std::vector<int> solve_greedy(T_Gold target_gold) {
         std::vector<int> quest_sequence;
+        T_XP current_xp     = 0;
+        T_Gold current_gold = 0;
 
         while (current_gold < target_gold) {
             int best_quest_idx = -1;
