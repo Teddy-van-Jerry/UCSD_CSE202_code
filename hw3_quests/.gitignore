@@ -1,0 +1,8 @@
+# C++
+bin
+lib
+build
+.cache
+
+# Results
+results
