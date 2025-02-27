@@ -1,0 +1,8 @@
+[package]
+name = "mult_polynomial"
+version = "0.1.0"
+edition = "2021"
+authors = ["Wuqiong Zhao <wqzhao@ucsd.edu>"]
+
+[dependencies]
+rand = "0.8"
