@@ -1,10 +1,22 @@
 use rand::Rng;
 
 /// Represents a polynomial with real coefficients
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Polynomial {
     /// Coefficients of the polynomial, from lowest to highest degree
     pub coeffs: Vec<f64>,
+}
+
+impl PartialEq for Polynomial {
+    fn eq(&self, other: &Self) -> bool {
+        // allow a threshold
+        let threshold = 1e-12;
+        self.coeffs
+            .iter()
+            .zip(other.coeffs.iter())
+            .all(|(a, b)| (a - b).abs() < threshold)
+            && self.coeffs.len() == other.coeffs.len()
+    }
 }
 
 impl Polynomial {
@@ -81,11 +93,6 @@ impl Polynomial {
     }
 }
 
-/// Implementation of Cook-Tooms algorithm with k=3 (Toom-3)
-fn cook_tooms_k3_impl(a: &[f64], b: &[f64]) -> Vec<f64> {
-    thresholded_multiply_impl(a, b, 5) // only use naive for length 1
-}
-
 /// Basic naive implementation of polynomial multiplication
 fn naive_multiply_impl(a: &[f64], b: &[f64]) -> Vec<f64> {
     let n = a.len();
@@ -104,6 +111,11 @@ fn naive_multiply_impl(a: &[f64], b: &[f64]) -> Vec<f64> {
     }
 
     result
+}
+
+/// Implementation of Cook-Tooms algorithm with k=3 (Toom-3)
+fn cook_tooms_k3_impl(a: &[f64], b: &[f64]) -> Vec<f64> {
+    thresholded_multiply_impl(a, b, 5) // only use naive for length < 5
 }
 
 /// Thresholded version that chooses between algorithms based on input size
@@ -154,28 +166,29 @@ pub fn thresholded_multiply_impl(a: &[f64], b: &[f64], threshold: usize) -> Vec<
         b2[i] = b[i + 2 * n_chunk];
     }
 
-    // Evaluate at 5 points: 0, 1, -1, 2, -2
+    // Evaluate at 5 points: 0, 1, -1, 2, inf
     // let a_at_0 = a0.clone();
     let mut a_at_1 = vec![0.0; n_chunk];
     let mut a_at_neg1 = vec![0.0; n_chunk];
     let mut a_at_2 = vec![0.0; n_chunk];
-    let mut a_at_neg2 = vec![0.0; n_chunk];
+    let mut a_at_inf = vec![0.0; n_chunk];
 
     // let b_at_0 = b0.clone();
     let mut b_at_1 = vec![0.0; n_chunk];
     let mut b_at_neg1 = vec![0.0; n_chunk];
     let mut b_at_2 = vec![0.0; n_chunk];
-    let mut b_at_neg2 = vec![0.0; n_chunk];
+    let mut b_at_inf = vec![0.0; n_chunk];
 
     for i in 0..n_chunk {
         a_at_1[i] = a0[i] + a1[i] + a2[i];
         a_at_neg1[i] = a0[i] - a1[i] + a2[i];
         a_at_2[i] = a0[i] + 2.0 * a1[i] + 4.0 * a2[i];
-        a_at_neg2[i] = a0[i] - 2.0 * a1[i] + 4.0 * a2[i];
+        a_at_inf[i] = a2[i];
+
         b_at_1[i] = b0[i] + b1[i] + b2[i];
         b_at_neg1[i] = b0[i] - b1[i] + b2[i];
         b_at_2[i] = b0[i] + 2.0 * b1[i] + 4.0 * b2[i];
-        b_at_neg2[i] = b0[i] - 2.0 * b1[i] + 4.0 * b2[i];
+        b_at_inf[i] = b2[i];
     }
 
     // Pointwise multiplication at each evaluation point
@@ -183,7 +196,7 @@ pub fn thresholded_multiply_impl(a: &[f64], b: &[f64], threshold: usize) -> Vec<
     let p1 = thresholded_multiply_impl(&a_at_1, &b_at_1, thr);
     let p2 = thresholded_multiply_impl(&a_at_neg1, &b_at_neg1, thr);
     let p3 = thresholded_multiply_impl(&a_at_2, &b_at_2, thr);
-    let p4 = thresholded_multiply_impl(&a_at_neg2, &b_at_neg2, thr);
+    let p4 = thresholded_multiply_impl(&a_at_inf, &b_at_inf, thr);
 
     let result_len = n + m - 1;
     let mut result = vec![0.0; result_len];
@@ -203,23 +216,26 @@ pub fn thresholded_multiply_impl(a: &[f64], b: &[f64], threshold: usize) -> Vec<
         .max(p4.len());
 
     for i in 0..max_coeff {
-        let v0 = if i < p0.len() { p0[i] } else { 0.0 };
-        let v1 = if i < p1.len() { p1[i] } else { 0.0 };
-        let v2 = if i < p2.len() { p2[i] } else { 0.0 };
-        let v3 = if i < p3.len() { p3[i] } else { 0.0 };
-        let v4 = if i < p4.len() { p4[i] } else { 0.0 };
+        let v_0 = if i < p0.len() { p0[i] } else { 0.0 }; // 0
+        let v_1 = if i < p1.len() { p1[i] } else { 0.0 }; // 1
+        let v_neg1 = if i < p2.len() { p2[i] } else { 0.0 }; // -1
+        let v_2 = if i < p3.len() { p3[i] } else { 0.0 }; // 2
+        let v_inf = if i < p4.len() { p4[i] } else { 0.0 }; // inf
 
-        let c0 = v0;
-        let c1 = (v1 - v2) / 2.0 - (v3 - v4) / 12.0 - v0;
-        let c2 = (v1 + v2) / 2.0 - v0 - (v3 + v4) / 6.0;
-        let c3 = (v3 - v4) / 6.0 - (v1 - v2) / 6.0;
-        let c4 = (v3 + v4) / 24.0 - (v1 + v2) / 24.0 + v0 / 24.0;
+        // Interpolation formulas for Toom-3
+        let r0 = v_0;
+        let r4 = v_inf;
+        let r2 = (v_1 + v_neg1) / 2.0 - v_0 - v_inf;
+        let y = (v_1 - v_neg1) / 2.0;
+        let x = (v_2 - v_0 - 4.0 * r2 - 16.0 * v_inf) / 2.0;
+        let r3 = (x - y) / 3.0;
+        let r1 = y - r3;
 
-        add_to_result(i, c0);
-        add_to_result(i + n_chunk, c1);
-        add_to_result(i + 2 * n_chunk, c2);
-        add_to_result(i + 3 * n_chunk, c3);
-        add_to_result(i + 4 * n_chunk, c4);
+        add_to_result(i, r0);
+        add_to_result(i + n_chunk, r1);
+        add_to_result(i + 2 * n_chunk, r2);
+        add_to_result(i + 3 * n_chunk, r3);
+        add_to_result(i + 4 * n_chunk, r4);
     }
 
     result
@@ -264,9 +280,9 @@ mod tests {
         assert_eq!(result.coeffs, vec![]);
     }
 
-    /// Test multiplication of larger random polynomials
+    /// Test multiplication of larger given polynomials
     #[test]
-    fn test_random_polynomial_multiplication() {
+    fn test_given_polynomial_multiplication() {
         // Fixed test case with simple coefficients
         let p1 = Polynomial::new(vec![1.0, 2.0, 3.0]);
         let p2 = Polynomial::new(vec![4.0, 5.0, 6.0]);
@@ -284,9 +300,22 @@ mod tests {
         assert_eq!(result_naive.coeffs.len(), expected.coeffs.len());
         assert_eq!(result_cook_tooms.coeffs.len(), expected.coeffs.len());
 
-        // Check correctness (with PartialEq derived)
+        // Check if the results are the same
         assert_eq!(result_naive, expected);
         assert_eq!(result_cook_tooms, expected);
+        assert_eq!(result_naive, result_cook_tooms);
+    }
+
+    /// Test multiplication with random polynomials
+    #[test]
+    fn test_random_polynomials_multiplication() {
+        let p1 = Polynomial::random(-10.0, 10.0, 10);
+        let p2 = Polynomial::random(-10.0, 10.0, 10);
+
+        let result_naive = p1.multiply_naive(&p2);
+        let result_cook_tooms = p1.multiply_cook_tooms_k3(&p2);
+
+        // Check if the results are the same
         assert_eq!(result_naive, result_cook_tooms);
     }
 
